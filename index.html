@@ -1,130 +1,260 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="AI 会议助手 - 远程会议记录与纪要生成">
-  <title>AI 会议助手</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LumiChat - AI 视讯助手</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <!-- 全屏粒子背景 Canvas -->
+  <canvas id="bg-canvas"></canvas>
 
-  <!-- 顶部导航栏 -->
-  <header class="app-header">
-    <div class="app-logo">
-      <div class="icon">📋</div>
-      <span>AI 会议助手</span>
-    </div>
-    <div class="header-timer" id="meeting-timer" style="display:none">
-      <span class="timer-icon">⏱</span>
-      <span class="timer-text">00:00</span>
-    </div>
-    <div class="status-bar">
-      <div id="cam-status" class="status-item inactive">
-        <span class="dot"></span>
-        <span>摄像头待命</span>
-      </div>
-      <div id="source-status" class="status-item inactive" style="display:none">
-        <span class="dot"></span>
-        <span id="source-label">📷 摄像头</span>
-      </div>
-      <div id="mic-status" class="status-item inactive">
-        <span class="dot"></span>
-        <span>麦克风待命</span>
-      </div>
-      <div id="ai-status" class="status-item inactive">
-        <span class="dot"></span>
-        <span>AI 待命</span>
-      </div>
-    </div>
-  </header>
+  <!-- 自定义光标光晕 -->
+  <div id="cursor-glow" class="cursor-glow"></div>
 
-  <!-- 主内容区 -->
-  <main class="app-main">
-    
-    <!-- 左侧：摄像头/屏幕面板 -->
-    <section class="camera-panel">
-      <div class="camera-view">
-        <video id="camera-video" autoplay playsinline muted></video>
-        <div id="camera-placeholder" class="camera-placeholder">
-          <div class="big-icon">📋</div>
-          <div>会议助手未启动</div>
-          <div style="font-size:12px;color:var(--text-muted);margin-top:8px">点击「开始会议」启动录制</div>
+  <!-- AI 浮动代理气泡 -->
+  <div id="floating-agent" class="floating-agent" style="display:none;">
+    <div class="agent-bubble">
+      <div class="agent-avatar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 8a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z"/><path d="M20 21a8 8 0 1 0-16 0"/><circle cx="12" cy="12" r="10"/>
+        </svg>
+      </div>
+      <div class="agent-status">
+        <div class="status-dot"></div>
+        <span id="agent-status-text">就绪</span>
+      </div>
+    </div>
+    <div id="agent-tooltip" class="agent-tooltip">
+      <span id="agent-tooltip-text">点击开始对话</span>
+    </div>
+  </div>
+
+  <!-- 主界面 -->
+  <div id="app" class="app-container">
+    <!-- 顶部 Dock 栏 -->
+    <header class="desktop-dock">
+      <div class="dock-left">
+        <div class="dock-logo" id="dock-logo">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="20" height="20">
+            <circle cx="12" cy="12" r="8" opacity="0.5"/>
+            <circle cx="12" cy="12" r="4"/>
+            <path d="M12 2v2M12 20v2M2 12h2M20 12h2" stroke-width="1.2"/>
+            <path d="M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
+          </svg>
+          <span>LumiChat</span>
         </div>
-        <div class="camera-overlay" id="camera-overlay">
-          <div id="camera-badge" class="camera-badge" style="display:none">
-            <span class="rec-dot"></span> REC
+        <div class="dock-status">
+          <div class="status-item" id="status-camera">
+            <div class="status-dot"></div>
+            <span>摄像头</span>
           </div>
-          <div id="voice-wave" class="voice-wave" style="display:none">
+          <div class="status-item" id="status-mic">
+            <div class="status-dot"></div>
+            <span>麦克风</span>
+          </div>
+          <div class="status-item" id="status-ai">
+            <div class="status-dot status-ai"></div>
+            <span>AI</span>
+          </div>
+        </div>
+      </div>
+      <div class="dock-center">
+        <div class="dock-time" id="dock-time">00:00</div>
+      </div>
+      <div class="dock-right">
+        <div class="dock-actions">
+          <button class="dock-btn" id="dock-cursor" title="光标特效">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+              <path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/><path d="M13 13l6 6"/>
+            </svg>
+          </button>
+          <button class="dock-btn dock-btn-active" id="dock-mic-toggle" title="麦克风">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+              <rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="19" x2="12" y2="22"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- 桌面主体 - 玻璃态窗口 -->
+    <main class="desktop-workspace">
+      <!-- 摄像头窗口 -->
+      <div class="glass-window camera-window" id="window-camera">
+        <div class="window-bar">
+          <div class="window-dots">
+            <span class="dot dot-red" id="cam-close-hint"></span>
+            <span class="dot dot-yellow"></span>
+            <span class="dot dot-green"></span>
+          </div>
+          <span class="window-title">📷 视觉输入</span>
+          <div class="window-controls">
+            <button class="win-btn" id="btn-toggle-cam" title="切换摄像头">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                <path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+              </svg>
+            </button>
+            <button class="win-btn" id="btn-screenshare" title="屏幕共享">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="window-content camera-content">
+          <video id="video-feed" autoplay playsinline muted></video>
+          <div class="camera-overlay" id="camera-overlay">
+            <div class="overlay-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+              </svg>
+            </div>
+            <span>摄像头待启动</span>
+            <span class="overlay-msg"></span>
+            <button class="overlay-retry" id="btn-retry-cam" style="display:none;">🔄 重试摄像头</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 对话窗口 -->
+      <div class="glass-window chat-window" id="window-chat">
+        <div class="window-bar">
+          <div class="window-dots">
+            <span class="dot dot-red"></span>
+            <span class="dot dot-yellow"></span>
+            <span class="dot dot-green"></span>
+          </div>
+          <span class="window-title">💬 AI 对话</span>
+          <div class="window-controls">
+            <button class="win-btn" id="btn-clear-chat" title="清空对话">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="window-content chat-content">
+          <!-- AI 呼吸效果 Canvas -->
+          <canvas id="ai-breath-canvas" style="display:none;"></canvas>
+          <!-- 欢迎界面 -->
+          <div class="welcome-screen" id="welcome-screen">
+            <div class="welcome-icon">
+              <svg viewBox="0 0 80 80" fill="none" width="80" height="80">
+                <circle cx="40" cy="40" r="36" stroke="currentColor" stroke-width="1" opacity="0.15"/>
+                <circle cx="40" cy="40" r="28" stroke="currentColor" stroke-width="1" opacity="0.25"/>
+                <circle cx="40" cy="40" r="20" stroke="currentColor" stroke-width="1.5"/>
+                <path d="M40 10v4M40 66v4M10 40h4M66 40h4" stroke="currentColor" stroke-width="1.5" opacity="0.6"/>
+                <circle cx="28" cy="32" r="3" fill="currentColor" opacity="0.6"/>
+                <circle cx="52" cy="32" r="3" fill="currentColor" opacity="0.6"/>
+                <path d="M32 48c3 4 5 4 8 4s5 0 8-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" opacity="0.6"/>
+              </svg>
+            </div>
+            <h2 class="welcome-title">LumiChat</h2>
+            <p class="welcome-subtitle">AI 视讯助手已就绪</p>
+            <div class="welcome-hints">
+              <div class="hint-item">🎤 说出你的问题</div>
+              <div class="hint-item">📷 AI 能看到摄像头画面</div>
+              <div class="hint-item">🖥️ 支持屏幕共享</div>
+              <div class="hint-item" id="hint-upload" style="display:none;">📁 或上传音频文件</div>
+            </div>
+            <button class="start-btn" id="btn-start">
+              <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
+                <polygon points="5 3 19 12 5 21 5 3"/>
+              </svg>
+              开始对话
+            </button>
+          </div>
+          <!-- 消息列表 -->
+          <div class="chat-messages" id="chat-messages" style="display:none;"></div>
+          <!-- 加载指示器 -->
+          <div class="chat-loading" id="chat-loading" style="display:none;">
+            <div class="loading-dots">
+              <span></span><span></span><span></span>
+            </div>
+            <span class="loading-text">AI 思考中...</span>
+          </div>
+        </div>
+        <!-- 底部输入栏 -->
+        <div class="chat-input-bar" id="chat-input-bar" style="display:none;">
+          <div class="voice-wave" id="voice-wave">
             <span></span><span></span><span></span><span></span><span></span>
           </div>
+          <input type="text" class="chat-input" id="chat-input" placeholder="输入消息或点击麦克风说话..." />
+          <button class="input-btn" id="btn-send" title="发送">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+              <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+            </svg>
+          </button>
+          <button class="input-btn input-btn-mic" id="btn-mic" title="语音输入">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+              <rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="19" x2="12" y2="22"/>
+            </svg>
+          </button>
+          <button class="input-btn" id="btn-upload" title="上传音频文件" style="display:none;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+          </button>
+          <input type="file" id="audio-file-input" accept="audio/*" style="display:none;" />
         </div>
       </div>
-      <div class="camera-tools">
-        <button id="btn-start" class="btn btn-primary">🎬 开始会议</button>
-        <button id="btn-stop" class="btn btn-danger" style="display:none">⏹ 结束</button>
-        <button id="btn-pause-cam" class="btn btn-sm" disabled>⏸ 暂停</button>
-        <button id="btn-switch-cam" class="btn btn-sm">🔄 摄像头</button>
-        <button id="btn-screenshare" class="btn btn-sm" style="display:none">🖥 共享屏幕</button>
-        <button id="btn-summary" class="btn btn-sm btn-accent" style="display:none">📄 生成会议纪要</button>
-      </div>
-    </section>
+    </main>
 
-    <!-- 右侧：对话面板 -->
-    <section class="chat-panel">
-      <div class="chat-header">
-        <h3>💬 会议记录</h3>
-        <div class="chat-actions">
-          <button id="btn-clear" class="btn btn-sm">🗑 清空</button>
+    <!-- 底部状态栏 -->
+    <footer class="desktop-footer">
+      <div class="footer-left">
+        <span class="footer-text" id="footer-status">💡 点击"开始对话"启动 AI 视讯助手</span>
+      </div>
+      <div class="footer-right">
+        <span class="footer-text mono" id="footer-fps">-- FPS</span>
+        <span class="footer-text" id="footer-source">📷 未连接</span>
+      </div>
+    </footer>
+  </div>
+
+  <!-- 音频播放器（隐藏） -->
+  <audio id="audio-player" preload="metadata" crossorigin="anonymous"></audio>
+
+  <!-- 沉浸式音乐可视化全屏界面 -->
+  <div class="music-immersive" id="music-immersive" style="display:none;">
+    <canvas id="music-viz-canvas"></canvas>
+    <div class="music-immersive-ui">
+      <div class="music-immersive-song">
+        <span class="song-title" id="immersive-song-title">私人漫游</span>
+        <span class="song-artist" id="immersive-song-artist">网易云音乐</span>
+      </div>
+      <div class="music-immersive-lyrics" id="immersive-lyrics" style="display:none;">
+        <span class="lyric-current" id="lyric-current">🎵 正在为你播放...</span>
+        <span class="lyric-next" id="lyric-next"></span>
+      </div>
+      <div class="music-immersive-progress" style="display:none;">
+        <span class="time-current" id="immersive-time-current">0:00</span>
+        <div class="progress-track">
+          <div class="progress-fill" id="immersive-progress-fill"></div>
         </div>
+        <span class="time-total" id="immersive-time-total">0:00</span>
       </div>
+    </div>
+    <button class="music-immersive-close" id="btn-close-immersive" title="返回对话">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+        <line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>
+      </svg>
+    </button>
+  </div>
 
-      <!-- 对话消息区域 -->
-      <div id="chat-messages" class="chat-messages">
-        <div class="welcome-message">
-          <div class="big-icon">📋</div>
-          <h4>AI 会议记录助手</h4>
-          <p>点击上方「开始会议」按钮<br/>启动摄像头和麦克风，记录会议内容</p>
-        </div>
-      </div>
-
-      <!-- 会议纪要面板 -->
-      <div id="summary-panel" class="summary-panel" style="display:none">
-        <div class="summary-header">
-          <span>📄 会议纪要</span>
-          <button class="btn btn-sm" onclick="this.parentElement.parentElement.style.display='none'">✕</button>
-        </div>
-        <div id="summary-content" class="summary-content"></div>
-      </div>
-
-      <!-- 输入区 -->
-      <div class="chat-input-area">
-        <div id="interim-text" class="interim-text"></div>
-        <div class="chat-input-row">
-          <textarea id="chat-input" class="chat-input" placeholder="输入文字，或直接说话记录会议..." rows="1"></textarea>
-          <button id="btn-send" class="btn btn-primary btn-icon" title="发送">➤</button>
-        </div>
-      </div>
-
-      <!-- 状态提示栏 -->
-      <div class="status-indicator-bar">
-        <span id="status-dot" class="pulse-dot"></span>
-        <span id="status-text" class="status-text">点击「开始会议」启动</span>
-      </div>
-    </section>
-  </main>
-
-  <!-- 加载模块脚本 -->
   <script src="modules/utils.js"></script>
   <script src="modules/camera.js"></script>
   <script src="modules/screenshare.js"></script>
+  <script src="modules/audio-recorder.js"></script>
   <script src="modules/speech.js"></script>
   <script src="modules/api.js"></script>
+  <script src="modules/memory.js"></script>
   <script src="modules/chat.js"></script>
   <script src="app.js"></script>
-
 </body>
 </html>

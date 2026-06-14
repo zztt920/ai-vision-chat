@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>网易云音乐扫码登录</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+    .card {
+      background: rgba(255,255,255,0.95);
+      border-radius: 20px;
+      padding: 40px;
+      text-align: center;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      max-width: 420px;
+    }
+    .logo {
+      font-size: 28px;
+      font-weight: bold;
+      color: #c20c0c;
+      margin-bottom: 10px;
+    }
+    .title {
+      font-size: 18px;
+      color: #333;
+      margin-bottom: 6px;
+    }
+    .subtitle {
+      font-size: 13px;
+      color: #999;
+      margin-bottom: 24px;
+    }
+    #qrcode img {
+      width: 280px;
+      height: 280px;
+      border-radius: 12px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+    }
+    .hint {
+      margin-top: 20px;
+      color: #666;
+      font-size: 14px;
+    }
+    .hint b { color: #c20c0c; }
+    .status {
+      margin-top: 12px;
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      display: inline-block;
+    }
+    .status.waiting { background: #fff3cd; color: #856404; }
+    .status.success { background: #d4edda; color: #155724; }
+    .status.error { background: #f8d7da; color: #721c24; }
+    .refresh-btn {
+      margin-top: 16px;
+      padding: 8px 24px;
+      border: 1px solid #c20c0c;
+      background: white;
+      color: #c20c0c;
+      border-radius: 20px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .refresh-btn:hover { background: #c20c0c; color: white; }
+    .expire-note { font-size: 12px; color: #aaa; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">🎵 网易云音乐</div>
+    <div class="title">扫码授权登录</div>
+    <div class="subtitle">请使用网易云音乐 App 扫描二维码</div>
+    <div id="qrcode"><img id="qrImg" src="/api/ncm-login-qr" alt="加载中..."></div>
+    <div class="hint">
+      打开 <b>网易云音乐 App</b> → 扫一扫 → 确认授权
+    </div>
+    <div id="status" class="status waiting">等待扫码中...</div>
+    <div class="expire-note">二维码有效期为 5 分钟</div>
+    <button class="refresh-btn" onclick="location.reload()">刷新二维码</button>
+  </div>
+
+  <script>
+    let codekey = '';
+    let pollCount = 0;
+    const maxPoll = 120;
+
+    // 从响应头获取 codekey
+    fetch('/api/ncm-login-qr').then(r => {
+      codekey = r.headers.get('X-Codekey') || '';
+      return r.blob();
+    }).then(blob => {
+      document.getElementById('qrImg').src = URL.createObjectURL(blob);
+      // 开始轮询
+      if (codekey) setTimeout(pollStatus, 2000);
+    }).catch(() => {
+      document.getElementById('qrcode').innerHTML = '<p style="color:red">二维码加载失败，请刷新重试</p>';
+    });
+
+    function pollStatus() {
+      pollCount++;
+      if (pollCount > maxPoll) {
+        document.getElementById('status').className = 'status error';
+        document.getElementById('status').textContent = '二维码已过期，请刷新';
+        return;
+      }
+
+      fetch('/api/check-ncm-login')
+      .then(r => r.json())
+      .then(data => {
+        if (data.loggedIn) {
+          document.getElementById('status').className = 'status success';
+          document.getElementById('status').textContent = '✅ 登录成功！可以关闭此页面了';
+          // 保存 cookie 到服务器
+          fetch('/api/ncm-save-cookie', { method: 'POST' });
+        } else {
+          document.getElementById('status').textContent = '等待扫码中...';
+          setTimeout(pollStatus, 2000);
+        }
+      })
+      .catch(() => setTimeout(pollStatus, 3000));
+    }
+  </script>
+</body>
+</html>

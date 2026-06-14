@@ -2,7 +2,6 @@
   'use strict';
 
   var messages = [];
-  var onMessageCallback = function() {};
   var MAX_HISTORY = 20;
   var SUMMARY_COUNT = 10;
 
@@ -19,7 +18,7 @@
     };
 
     messages.push(message);
-    onMessageCallback(message);
+    if (ChatModule.onMessage) ChatModule.onMessage(message);
 
     // 上下文压缩：当历史超过 20 条时压缩前 10 条
     if (messages.length > MAX_HISTORY) {
@@ -75,16 +74,28 @@
     };
 
     messages.unshift(summaryMessage);
-    onMessageCallback(summaryMessage);
+    if (ChatModule.onMessage) ChatModule.onMessage(summaryMessage);
+  }
+
+  // 更新消息内容（用于流式渲染）
+  function updateMessage(id, content) {
+    var msg = messages.find(function(m) { return m.id === id; });
+    if (msg) {
+      msg.content = content;
+      msg._updated = Date.now();
+      if (ChatModule.onMessage) ChatModule.onMessage(msg);  // 触发重渲染
+    }
+    return msg;
   }
 
   // 导出到全局
   window.ChatModule = {
     addMessage: addMessage,
+    updateMessage: updateMessage,
     getHistory: getHistory,
     clear: clear,
     getMessages: getMessages,
-    onMessage: onMessage
+    onMessage: null
   };
 
 })();
