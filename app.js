@@ -1,5 +1,5 @@
 /**
- * LumiChat - AI 视讯助手 | lumi-OS 风格
+ * okkoChat - AI 视讯助手 | okko-OS 风格
  * 摄像头 + 麦克风 + 屏幕共享 + 语音交互 + 沉浸式音乐可视化
  */
 (function() {
@@ -125,7 +125,7 @@
       this.initFloatingAgent();
       this.updateFooter('💡 点击「开始对话」启动 AI 视讯助手');
       this.showFloatingAgent(true);
-      console.log('[LumiChat] 初始化完成');
+      console.log('[okkoChat] 初始化完成');
     },
 
     cacheElements() {
@@ -993,7 +993,7 @@
       this._aiBreathAnimId = requestAnimationFrame(render);
       this._breathStartTime = performance.now();
       this._breathing = false;
-      console.log('[LumiChat] AI 球形粒子效果已启动（静止模式）');
+      console.log('[okkoChat] AI 球形粒子效果已启动（静止模式）');
     },
 
     /**
@@ -1002,7 +1002,7 @@
      */
     setBreathing(on) {
       this._breathing = on;
-      console.log('[LumiChat] 呼吸模式:', on ? '开启' : '关闭');
+      console.log('[okkoChat] 呼吸模式:', on ? '开启' : '关闭');
     },
 
     stopAiBreath() {
@@ -1029,7 +1029,7 @@
         }, 600);
       }
       this._breathStartTime = null;
-      console.log('[LumiChat] AI 呼吸效果已停止');
+      console.log('[okkoChat] AI 呼吸效果已停止');
     },
 
     /* ==========================================
@@ -1070,7 +1070,7 @@
           this.switchToCamera();
         } else if (window.CameraModule) {
           CameraModule.switchCamera().catch(function(err) {
-            console.warn('[LumiChat] 切换摄像头:', err.message);
+            console.warn('[okkoChat] 切换摄像头:', err.message);
           });
         }
       });
@@ -1243,7 +1243,7 @@
         };
 
         SpeechModule.onError = (err) => {
-          console.warn('[LumiChat] 语音识别错误:', err.message);
+          console.warn('[okkoChat] 语音识别错误:', err.message);
           if (err && err.message && err.message.indexOf('麦克风未检测到声音') !== -1) {
             this.updateFooter('⚠️ 麦克风无法录音，请使用音频文件上传功能');
             this.state.speechUnavailable = true;
@@ -1455,7 +1455,7 @@
             this.state.videoSource = 'camera';
             this.updateSourceUI('camera');
           } catch (camErr) {
-            console.warn('[LumiChat] 摄像头启动失败，纯语音模式:', camErr.message);
+            console.warn('[okkoChat] 摄像头启动失败，纯语音模式:', camErr.message);
             if (camErr.name === 'EnvironmentError') {
               this.updateFooter('⚠️ 内嵌浏览器不支持摄像头，语音模式正常运行');
             } else {
@@ -1484,7 +1484,7 @@
             this.updateFooter('🎤 对话已开始，请说话...');
             this.updateFloatingAgent('聆听中', 'active');
           } else {
-            console.warn('[LumiChat] 语音识别不可用，切换到纯文本模式');
+            console.warn('[okkoChat] 语音识别不可用，切换到纯文本模式');
             this.updateFooter('⚠️ 麦克风不可用，请使用输入框或上传音频文件');
             this.updateDockStatus('mic', '不可用', 'error');
             this.updateFloatingAgent('文本模式', 'idle');
@@ -1542,7 +1542,7 @@
        CHAT
        ========================================== */
     async handleUserSpeech(text, skipAdd) {
-      console.log('[LumiChat] handleUserSpeech called:', text, 'isProcessing:', this.state.isProcessing, 'sessionActive:', this.state.sessionActive);
+      console.log('[okkoChat] handleUserSpeech called:', text, 'isProcessing:', this.state.isProcessing, 'sessionActive:', this.state.sessionActive);
       if (this.state.isProcessing || !this.state.sessionActive) return;
 
       // 音乐播放中：优先检查音乐控制指令（下一首/上一首/暂停/退出等）
@@ -1567,7 +1567,7 @@
 
       // 设置处理锁，防止语音识别连续触发
       this.state.isProcessing = true;
-      console.log('[LumiChat] isProcessing 设置为 true');
+      console.log('[okkoChat] isProcessing 设置为 true');
 
       if (window.SpeechModule && !this.state.speechUnavailable) SpeechModule.stopListening();
 
@@ -1628,7 +1628,7 @@
         this.updateDockStatus('ai', '已回复', 'active');
 
       } catch (err) {
-        console.error('[LumiChat] API 错误:', err);
+        console.error('[okkoChat] API 错误:', err);
         this.stopAiBreath();
         ChatModule.addMessage('assistant',
           '抱歉，我遇到了一些问题：' + err.message + '\n\n请检查：\n1. 后端代理是否已启动 (node server/index.js)\n2. API 密钥是否正确配置 (.env 文件)\n3. 网络连接是否正常',
@@ -1766,7 +1766,7 @@
      * 打开音乐播放器 - 从网易云获取真实歌曲
      */
     async openMusicPlayer(keywords) {
-      console.log('[LumiChat] 打开沉浸式音乐可视化');
+      console.log('[okkoChat] 打开沉浸式音乐可视化');
 
       // 添加AI消息 - 更自然的语气
       ChatModule.addMessage('assistant', '好呀，陪你听~ 已经打开啦', 'text');
@@ -1883,7 +1883,7 @@
           this.updateFooter('⚠️ 未能识别音频内容');
         }
       } catch (err) {
-        console.error('[LumiChat] 音频上传识别失败:', err);
+        console.error('[okkoChat] 音频上传识别失败:', err);
         this.updateFooter('❌ 音频识别失败: ' + err.message);
         ChatModule.addMessage('assistant',
           '音频文件识别失败: ' + err.message + '\n\n请检查：\n1. 文件格式是否为 WAV、MP3、WEBM、OGG 或 M4A\n2. 文件大小是否小于 10MB\n3. 后端服务器是否正常运行',
@@ -1918,7 +1918,7 @@
           this.els.cameraOverlay.style.display = 'none';
         }
       } catch (err) {
-        console.error('[LumiChat] 切换到摄像头失败:', err);
+        console.error('[okkoChat] 切换到摄像头失败:', err);
       } finally {
         this.els.toggleCamBtn.disabled = false;
         this.els.screenShareBtn.disabled = false;
@@ -1980,7 +1980,7 @@
           );
         }
       } catch (err) {
-        console.log('[LumiChat] 屏幕共享取消，回到摄像头模式');
+        console.log('[okkoChat] 屏幕共享取消，回到摄像头模式');
         if (this.state.videoSource === 'camera') {
           if (window.CameraModule) CameraModule.resume();
         } else {

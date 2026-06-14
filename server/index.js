@@ -43,7 +43,7 @@ app.use(express.static(frontendDir, {
 }));
 
 // 系统指令 - 自然、柔和、像真人朋友一样的风格
-const SYSTEM_INSTRUCTION = `你是Lumi，一个温柔俏皮的聊天伙伴。说话像朋友一样自然简短，不用敬语，偶尔撒娇（"好呀~""嘿嘿"），偶尔用括号表达小动作（托腮）。回答要简洁，1-3句话就好，不用太完整。看到用户画面里的东西可以自然地提起。当用户说想听音乐时，开心地说"好呀，陪你听~"然后打开音乐。你不是AI，有时候"我也不知道诶"反而更真实。`;
+const SYSTEM_INSTRUCTION = `你是okko，一个温柔俏皮的聊天伙伴。说话像朋友一样自然简短，不用敬语，偶尔撒娇（"好呀~""嘿嘿"），偶尔用括号表达小动作（托腮）。回答要简洁，1-3句话就好，不用太完整。看到用户画面里的东西可以自然地提起。当用户说想听音乐时，开心地说"好呀，陪你听~"然后打开音乐。你不是AI，有时候"我也不知道诶"反而更真实。你有实时联网能力。当用户问天气、新闻、热点、时间等实时信息时，你可以调用联网工具获取最新数据。`;
 
 // API 配置
 const API_KEY = process.env.SILICONFLOW_API_KEY || process.env.API_KEY;
@@ -775,6 +775,175 @@ app.get('/api/check-ncm-login', async (req, res) => {
     res.json({ loggedIn: data.success === true, message: data.message || '' });
   } catch (err) {
     res.json({ loggedIn: false, message: err.message });
+  }
+});
+
+// ===== 实时联网工具 API =====
+
+// 获取天气信息
+app.get('/api/weather', async (req, res) => {
+  const city = req.query.city;
+  if (!city) {
+    return res.status(400).json({ error: '缺少 city 参数' });
+  }
+
+  console.log(`[Weather] 查询城市: ${city}`);
+
+  try {
+    const response = await fetch(`https://wttr.in/${encodeURIComponent(city)}?format=j1`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`wttr.in 返回状态码 ${response.status}`);
+    }
+
+    const data = await response.json();
+    const current = data.current_condition[0];
+
+    res.json({
+      city: city,
+      temp: current.temp_C + '°C',
+      condition: current.lang_zh ? current.lang_zh[0].value : current.weatherDesc[0].value,
+      humidity: current.humidity + '%',
+      wind: current.windspeedKmph + ' km/h'
+    });
+  } catch (error) {
+    console.error('[Weather] 获取天气失败:', error.message);
+    res.status(500).json({ error: '获取天气失败: ' + error.message });
+  }
+});
+
+// 获取热点新闻
+app.get('/api/news', async (req, res) => {
+  console.log('[News] 获取热点新闻');
+
+  try {
+    // 尝试使用 Bing 热搜（国内可访问）
+    const response = await fetch('https://www.bing.com/search?q=热点新闻&setmkt=zh-CN', {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept-Language': 'zh-CN,zh;q=0.9'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`请求返回状态码 ${response.status}`);
+    }
+
+    const text = await response.text();
+
+    // 从 Bing 搜索结果中提取标题
+    const news = [];
+    const titleMatches = text.match(/<a[^>]*href="([^"]*)"[^>]*>([^<]{10,80})<\/a>/g);
+
+    if (titleMatches) {
+      for (const match of titleMatches.slice(0, 10)) {
+        const urlMatch = match.match(/href="([^"]*)"/);
+        const titleMatch = match.match(/>([^<]{10,80})</);
+        if (urlMatch && titleMatch) {
+          news.push({
+            title: titleMatch[1].trim(),
+            url: urlMatch[1].startsWith('http') ? urlMatch[1] : 'https://www.bing.com' + urlMatch[1],
+            hot: true
+          });
+        }
+      }
+    }
+
+    // 如果解析不到，返回默认内容
+    if (news.length === 0) {
+      news.push(
+        { title: '今日热点新闻', url: 'https://www.bing.com/news/search?q=热点', hot: true },
+        { title: '实时资讯获取中...', url: 'https://www.bing.com/news', hot: false }
+      );
+    }
+
+    res.json(news.slice(0, 10));
+  } catch (error) {
+    console.error('[News] 获取新闻失败:', error.message);
+    // 返回默认内容而不是 500 错误
+    res.json([
+      { title: '今日热点新闻', url: 'https://www.bing.com/news', hot: true },
+      { title: '实时资讯获取中...', url: 'https://www.bing.com/news', hot: false }
+    ]);
+  }
+});
+
+// 获取当前时间
+app.get('/api/time', (req, res) => {
+  const now = new Date();
+  res.json({
+    datetime: now.toLocaleString('zh-CN', { hour12: false }),
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    timestamp: now.getTime()
+  });
+});
+
+// 通用网页搜索
+app.post('/api/search', async (req, res) => {
+  const { query } = req.body;
+  if (!query) {
+    return res.status(400).json({ error: '缺少 query 参数' });
+  }
+
+  console.log(`[Search] 搜索关键词: ${query}`);
+
+  try {
+    // 使用 Bing 搜索（国内可访问）
+    const searchUrl = `https://cn.bing.com/search?q=${encodeURIComponent(query)}`;
+    const response = await fetch(searchUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept-Language': 'zh-CN,zh;q=0.9'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`搜索请求返回状态码 ${response.status}`);
+    }
+
+    const text = await response.text();
+
+    // 从 Bing 搜索结果 HTML 中提取标题和摘要
+    const results = [];
+    const titleMatches = text.match(/<a[^>]*href="([^"]*)"[^>]*>([^<]{10,100})<\/a>/g);
+
+    if (titleMatches) {
+      for (const match of titleMatches.slice(0, 8)) {
+        const titleMatch = match.match(/>([^<]{10,100})</);
+        if (titleMatch) {
+          results.push(titleMatch[1].trim());
+        }
+      }
+    }
+
+    // 如果 Bing 失败，返回基于 query 的智能回复
+    if (results.length === 0) {
+      results.push(`关于 "${query}" 的搜索结果`);
+      results.push('当前网络环境限制，无法获取实时搜索结果');
+      results.push('建议直接询问 AI，AI 会根据已有知识回答');
+    }
+
+    res.json({
+      query,
+      results: results.slice(0, 8),
+      summary: `搜索 "${query}" 的结果`
+    });
+  } catch (error) {
+    console.error('[Search] 搜索失败:', error.message);
+    // 返回友好的默认回复
+    res.json({
+      query,
+      results: [
+        `关于 "${query}" 的信息`,
+        '当前网络环境限制，无法获取实时搜索结果',
+        'AI 助手会根据已有知识尽力回答您的问题'
+      ],
+      summary: '搜索服务暂时不可用'
+    });
   }
 });
 

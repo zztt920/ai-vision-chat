@@ -47,7 +47,7 @@ function createSttProxy(httpServer) {
     dashscopeWs = new WebSocket(DASHSCOPE_WS_URL, {
       headers: {
         'Authorization': `Bearer ${apiKey}`,
-        'User-Agent': 'LumiChat/1.0'
+        'User-Agent': 'okkoChat/1.0'
       }
     });
 

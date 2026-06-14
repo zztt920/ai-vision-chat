@@ -1,5 +1,5 @@
 /**
- * LumiChat 记忆模块
+ * okkoChat 记忆模块
  * 持久化存储所有对话，支持自我迭代学习
  * 存储方式：localStorage
  */
