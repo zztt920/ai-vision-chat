@@ -1,7 +1,10 @@
 # AI 视讯助手 🎥🤖
 
 基于浏览器的 AI 视觉对话应用，通过摄像头与麦克风实现多模态交互——AI 能"看到"你摄像头画面中的内容，"听到"你的语音提问，并给予语音+文字回复。支持屏幕共享，可用于远程会议记录场景。
-
+演示文档链接：通过网盘分享的文件：okkoChat - AI 视讯助手 和另外 3 个页面 - 个人 - Microsoft​ Edge 2026-06-15 16-47-39.mp4
+链接: https://pan.baidu.com/s/13hp3NDPKbI63dDBDcygAHw 提取码: gpv2 
+--来自百度网盘超级会员v4的分享
+B站源：【okkoChat - AI 视讯助手】 https://www.bilibili.com/video/BV1XTJV6CESy/?share_source=copy_web&vd_source=6061eecb56419643b3d016a0fba580f4
 ## 技术栈
 
 | 层级 | 选型 | 说明 |
