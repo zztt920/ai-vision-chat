@@ -305,6 +305,80 @@ async function getSongDetail(songId) {
   return null;
 }
 
+/**
+ * 使用 Web API + Cookie 获取歌曲 URL（支持 VIP 歌曲）
+ */
+async function getSongUrlWithCookie(songId, cookie) {
+  if (!cookie) return null;
+
+  try {
+    console.log('[NeteaseAPI] 使用 Cookie 获取歌曲 URL:', songId);
+
+    // 加密参数（weapi 格式）
+    const text = JSON.stringify({
+      ids: [String(songId)],
+      br: 320000,
+      encodeType: 'aac'
+    });
+    const secretKey = crypto.randomBytes(16).toString('hex');
+    const aesKey = Buffer.from(secretKey, 'hex');
+    const iv = Buffer.from('0102030405060708', 'hex');
+    const aesCipher = crypto.createCipheriv('aes-128-cbc', aesKey, iv);
+    aesCipher.setAutoPadding(false);
+    let encrypted = aesCipher.update(Buffer.from(text));
+    encrypted = Buffer.concat([encrypted, aesCipher.final()]);
+    const encryptedText = encrypted.toString('base64');
+
+    const foreKey = Buffer.from('0CoJUm6Qyw8WRRjud', 'utf8');
+    const foreIv = Buffer.from('0102030405060708', 'hex');
+    const foreCipher = crypto.createCipheriv('aes-128-cbc', foreKey, foreIv);
+    foreCipher.setAutoPadding(false);
+    let foreEncrypted = foreCipher.update(Buffer.from(encryptedText));
+    foreEncrypted = Buffer.concat([foreEncrypted, foreCipher.final()]);
+    const params = foreEncrypted.toString('base64');
+
+    const rsaPlain = `ts${Date.now()}u${secretKey}e0`;
+    const rsaKey = `-----BEGIN PUBLIC KEY-----
+MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDgtQn2LZ3nWWtqTga1bTRvI4Ea
+Kgta2dxPJDcByH/mPp8km6mXTEB0E/3lE8n0iNtDnvdM/YQpJf3VQH6gJjhRqNxD9
+l5J3p5vSn2v0eGKgUqB0e6hMz5J7XzJ+gMh6vJ3J3vJ3J3vJ3J3vJ3J3vJ3J3vJ3J3
+vQIDAQAB
+-----END PUBLIC KEY-----`;
+    const encSecKey = crypto.publicEncrypt({ key: rsaKey, padding: crypto.constants.RSA_NO_PADDING }, Buffer.from(rsaPlain)).toString('hex');
+
+    const response = await fetch('https://music.163.com/weapi/song/enhance/player/url/v1', {
+      method: 'POST',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Cookie': cookie,
+        'Referer': 'https://music.163.com/'
+      },
+      body: new URLSearchParams({
+        params: params,
+        encSecKey: encSecKey
+      }).toString()
+    });
+
+    const data = await response.json();
+    if (data.code === 200 && data.data?.[0]?.url) {
+      const songData = data.data[0];
+      console.log('[NeteaseAPI] Cookie 获取成功, br:', songData.br, 'type:', songData.type);
+      return {
+        url: songData.url,
+        br: songData.br || 0,
+        size: songData.size || 0,
+        type: songData.type || '',
+        md5: songData.md5 || ''
+      };
+    }
+    console.log('[NeteaseAPI] Cookie 获取失败, code:', data.code, 'msg:', data.message || '');
+  } catch (e) {
+    console.error('[NeteaseAPI] Cookie 获取异常:', e.message);
+  }
+  return null;
+}
+
 // 初始化时自动获取 token
 getAnonymousToken().catch(err => console.warn('[NeteaseAPI] 初始化 token 失败:', err.message));
 
@@ -312,6 +386,7 @@ module.exports = {
   getAnonymousToken,
   search,
   getSongUrl,
+  getSongUrlWithCookie,
   getLyric,
   getSongDetail,
   CONFIG

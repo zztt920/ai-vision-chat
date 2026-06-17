@@ -878,6 +878,25 @@ button, input, textarea, select, a, [contenteditable] { cursor: auto; }
   border-color: rgba(0,0,0,0.08);
 }
 
+/* === v6: 退出音乐后只保留AI呼吸效果，隐藏欢迎界面文字 === */
+.welcome-screen.breath-only .welcome-icon,
+.welcome-screen.breath-only .welcome-title,
+.welcome-screen.breath-only .welcome-subtitle,
+.welcome-screen.breath-only .welcome-hints,
+.welcome-screen.breath-only .start-btn {
+  display: none !important;
+}
+
+.welcome-screen.breath-only {
+  background: transparent !important;
+  pointer-events: none;
+}
+
+.welcome-screen.breath-only #ai-breath-canvas,
+.welcome-screen.breath-only canvas {
+  pointer-events: auto;
+}
+
 .start-btn {
   display: flex;
   align-items: center;

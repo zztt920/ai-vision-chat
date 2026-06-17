@@ -491,9 +491,41 @@
         this.startImmersiveVisualization();
       } else {
         this.stopImmersiveVisualization();
-        // 暂停音乐
+        // 彻底停止音乐（不只是暂停）
         if (this.state.audioPlayer) {
           this.state.audioPlayer.pause();
+          this.state.audioPlayer.currentTime = 0;
+          this.state.audioPlayer.src = '';
+          this.state.audioPlayer = null;
+        }
+        // 重置播放状态
+        this.state.currentSong = null;
+        this.state.playlist = [];
+        this.state.playlistIndex = -1;
+        // 重置沉浸式界面元素
+        if (this.els.immersiveSongTitle) this.els.immersiveSongTitle.textContent = '';
+        if (this.els.immersiveSongArtist) this.els.immersiveSongArtist.textContent = '';
+        if (this.els.immersiveTimeCurrent) this.els.immersiveTimeCurrent.textContent = '0:00';
+        if (this.els.immersiveTimeTotal) this.els.immersiveTimeTotal.textContent = '0:00';
+        if (this.els.immersiveProgressFill) this.els.immersiveProgressFill.style.width = '0%';
+        // === v6 修改：退出音乐后的界面处理 ===
+        if (this.state.sessionActive) {
+          // 会话进行中：保留AI呼吸，隐藏欢迎界面文字
+          if (this.els.welcomeScreen) {
+            this.els.welcomeScreen.style.display = 'flex';
+            this.els.welcomeScreen.classList.add('breath-only');
+          }
+          if (this.els.chatMessages) this.els.chatMessages.style.display = 'none';
+          if (this.els.chatInputBar) this.els.chatInputBar.style.display = 'flex';
+          this.startAiBreath();
+        } else {
+          // 会话未开始：恢复完整欢迎界面
+          if (this.els.welcomeScreen) {
+            this.els.welcomeScreen.style.display = 'flex';
+            this.els.welcomeScreen.classList.remove('breath-only');
+          }
+          if (this.els.chatMessages) this.els.chatMessages.style.display = 'none';
+          if (this.els.chatInputBar) this.els.chatInputBar.style.display = 'none';
         }
       }
     },
@@ -1090,9 +1122,6 @@
       // Close immersive music
       this.els.btnCloseImmersive.addEventListener('click', () => {
         this.showImmersiveMusic(false);
-        // 恢复聊天界面
-        if (this.els.chatMessages) this.els.chatMessages.style.display = 'flex';
-        if (this.els.chatInputBar) this.els.chatInputBar.style.display = 'flex';
       });
 
       // Dock cursor toggle
@@ -1582,13 +1611,121 @@
       this.updateDockStatus('ai', '回复中', 'active');
 
       try {
+        // === 实时联网：检测用户查询类型，自动调用相应 API ===
+        let realtimeContext = '';
+        const lowerText = text.toLowerCase();
+
+        // 时间查询
+        if (/现在几点|当前时间|今天几号|今天星期几|今天是|现在时间|几点了|什么时候|什么时间|现在什么时候|告诉我时间|报时/.test(text)) {
+          try {
+            const timeResp = await fetch('/api/time?_=' + Date.now(), {
+              headers: { 'Cache-Control': 'no-cache' }
+            });
+            const timeData = await timeResp.json();
+            realtimeContext = `【实时时间信息】当前时间：${timeData.datetime}（${timeData.timezone}）。请根据这个时间回答用户。`;
+            console.log('[Realtime] 获取时间:', timeData.datetime, 'updatedAt:', timeData.updatedAt);
+          } catch (e) {
+            console.log('[Realtime] 获取时间失败:', e.message);
+          }
+        }
+        // 天气查询
+        else if (/天气|气温|温度|下雨|下雪|刮风|下雨吗|下雪吗|冷不冷|热不热|穿什么|要不要带伞|紫外线|空气质量/.test(text)) {
+          try {
+            // 提取城市名：支持 "上海天气"、"今天上海天气怎么样"、"北京的天气"等格式
+            let city = null;
+
+            // 策略1: 匹配 "XX天气"、"XX气温"、"XX温度" — 直接提取前面的2-4个汉字
+            const m1 = text.match(/([\u4e00-\u9fa5]{2,4})(?:的)?(?:天气|气温|温度)/);
+            if (m1) city = m1[1].trim();
+
+            // 策略2: 如果策略1没匹配到，尝试匹配 "今天/明天 XX天气"
+            if (!city) {
+              const m2 = text.match(/(?:今天|明天|后天|现在)\s*([\u4e00-\u9fa5]{2,4})(?:的)?(?:天气|气温|温度)/);
+              if (m2) city = m2[1].trim();
+            }
+
+            // 策略3: 匹配 "XX的天气怎么样"
+            if (!city) {
+              const m3 = text.match(/([\u4e00-\u9fa5]{2,4})的?天气/);
+              if (m3) city = m3[1].trim();
+            }
+
+            // 验证城市名：检查是否包含已知城市（处理"今天上海" -> "上海"的情况）
+            const knownCities = ['北京', '上海', '广州', '深圳', '杭州', '南京', '成都', '武汉', '重庆', '西安', '苏州', '天津', '长沙', '郑州', '青岛', '大连', '厦门', '宁波', '无锡', '佛山', '沈阳', '济南', '哈尔滨', '长春', '昆明', '合肥', '南昌', '贵阳', '南宁', '兰州', '海口', '银川', '西宁', '拉萨', '乌鲁木齐', '呼和浩特', '石家庄', '太原', '福州', '南宁'];
+            if (city) {
+              for (const known of knownCities) {
+                if (city.includes(known)) {
+                  city = known;
+                  break;
+                }
+              }
+            }
+
+            // 过滤非城市词
+            const nonCity = ['今天', '明天', '后天', '现在', '当前', '请问', '我想', '知道', '查一下', '看看', '的'];
+            if (!city || nonCity.includes(city)) {
+              city = '北京';
+            }
+
+            const weatherResp = await fetch('/api/weather?city=' + encodeURIComponent(city) + '&_=' + Date.now(), {
+              headers: { 'Cache-Control': 'no-cache' }
+            });
+            const weatherData = await weatherResp.json();
+            realtimeContext = `【实时天气信息】${weatherData.city}：${weatherData.temp}，${weatherData.condition}，湿度${weatherData.humidity}，风速${weatherData.wind}。请根据这些信息回答用户。`;
+            console.log('[Realtime] 获取天气:', weatherData.city, weatherData.temp, 'updatedAt:', weatherData.updatedAt);
+          } catch (e) {
+            console.log('[Realtime] 获取天气失败:', e.message);
+          }
+        }
+        // 新闻/热点查询
+        else if (/新闻|热点|热搜|头条|新鲜事|发生了什么|最近有什么|今天有什么事|大事|时事|资讯|有什么新闻|看看新闻/.test(text)) {
+          try {
+            const newsResp = await fetch('/api/news?_=' + Date.now(), {
+              headers: { 'Cache-Control': 'no-cache' }
+            });
+            const newsData = await newsResp.json();
+            const newsList = newsData.news || newsData;
+            if (Array.isArray(newsList) && newsList.length > 0) {
+              const topNews = newsList.slice(0, 5).map((n, i) => `${i + 1}. ${n.title}`).join('\n');
+              realtimeContext = `【实时热点新闻】\n${topNews}\n\n请根据以上热点新闻回答用户。`;
+              console.log('[Realtime] 获取新闻:', newsList.length, '条', 'updatedAt:', newsData.updatedAt);
+            }
+          } catch (e) {
+            console.log('[Realtime] 获取新闻失败:', e.message);
+          }
+        }
+        // 通用搜索查询
+        else if (/搜索|查一下|找找|帮我搜|搜一下|查查|帮我查|搜一搜|百度一下|google|查一查|帮我找找|搜搜看/.test(text)) {
+          try {
+            const searchQuery = text.replace(/搜索|查一下|找找|帮我搜|搜一下|查查|帮我查|搜一搜|百度一下|google|查一查|帮我找找|搜搜看/g, '').trim() || text;
+            const searchResp = await fetch('/api/search?_=' + Date.now(), {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' },
+              body: JSON.stringify({ query: searchQuery })
+            });
+            const searchData = await searchResp.json();
+            if (searchData.results && searchData.results.length > 0) {
+              const topResults = searchData.results.slice(0, 5).join('\n');
+              realtimeContext = `【搜索结果】关于"${searchData.query}"：\n${topResults}\n\n请根据以上搜索结果回答用户。`;
+              console.log('[Realtime] 搜索:', searchData.query, 'updatedAt:', searchData.updatedAt);
+            }
+          } catch (e) {
+            console.log('[Realtime] 搜索失败:', e.message);
+          }
+        }
+
         const image = this.state.lastFrame || null;
         const history = ChatModule.getHistory();
         const memoryCtx = window.MemoryModule ? MemoryModule.buildContextSummary() : '';
 
+        // 组合上下文：实时信息 + 记忆 + 用户输入
+        const enhancedText = realtimeContext
+          ? `${realtimeContext}\n\n用户问题：${text}`
+          : text;
+
         // 流式接收
         let fullReply = '';
-        await APIClient.sendChatStream(text, image, history, {
+        await APIClient.sendChatStream(enhancedText, image, history, {
           onToken: (token) => {
             fullReply += token;
           },
@@ -1654,27 +1791,79 @@
     checkSpecialCommands(text) {
       const lowerText = text.toLowerCase();
 
-      // "陪我听音乐" / "播放音乐" / "听音乐" / "来首xx的歌" 指令
-      const musicTriggers = ['陪我听音乐', '播放音乐', '听音乐', '听歌', '打开音乐', '来首音乐', '来首歌', '放首歌', '放音乐', '听首歌'];
+      // ═══════════════════════════════════════════
+      // 音乐触发词（丰富版）
+      // ═══════════════════════════════════════════
+
+      // 通用音乐指令（不带具体歌曲）
+      const musicTriggers = [
+        '陪我听音乐', '播放音乐', '听音乐', '听歌', '打开音乐',
+        '来首音乐', '来首歌', '放首歌', '放音乐', '听首歌',
+        '我要听歌', '我想听歌', '我要听音乐', '我想听音乐',
+        '放点歌', '来点歌', '放点音乐', '来点音乐',
+        '放首歌听听', '来首歌听听', '放首歌吧', '来首歌吧',
+        '开音乐', '启动音乐', '开启音乐',
+        '给我放首歌', '给我来首歌', '帮我放首歌',
+        '放首歌给我', '来首歌给我',
+        '放首歌听', '来首歌听', '放点歌听', '来点歌听',
+        '我想听', '我要听', '帮我找首歌', '给我找首歌',
+        '来点好听的', '放点好听的', '来点节奏', '放点节奏',
+      ];
       const isMusicCommand = musicTriggers.some(t => lowerText.includes(t)) ||
-        /(?:来首|放首|听首|播放|想听|要听).+歌/.test(text);
+        /(?:来首|放首|听首|播放|想听|要听|给我放|帮我放|给我来|帮我来).+歌/.test(text) ||
+        /(?:来首|放首|听首|播放|想听|要听|给我放|帮我放|给我来|帮我来).+音乐/.test(text) ||
+        /^听歌$|^放歌$|^来歌$|^我要听$|^我想听$/.test(text);
 
       if (isMusicCommand) {
+        // === v6: 检测私人漫游指令 ===
+        const fmTriggers = ['私人漫游', '私人电台', '个性推荐', '推荐歌曲', '播放漫游', '打开私人漫游', '来首私人漫游'];
+        const isFMCommand = fmTriggers.some(t => lowerText.includes(t));
+        if (isFMCommand) {
+          this.openMusicPlayer(null, true); // true = 使用私人漫游
+          return true;
+        }
+
         // 尝试提取搜索关键词
         let keywords = null;
         const searchPatterns = [
-          /(?:播放|听|来首|放|想听|要听)(?:一首|个|首)?(.+?)(?:吧|吗|嘛|呢|呀|~|！|!|的)?$/,
-          /(?:来首|放首|听首)(.+?)(?:吧|吗|嘛|呢|呀|~|！|!|的)?$/,
+          // "我要听周杰伦的稻香" / "我想听林俊杰的江南" / "帮我放周杰伦稻香"
+          /(?:我要听|我想听|帮我放|给我放|给我来|帮我来|帮我找|给我找|播放|听|来首|放首|想听|要听)(?:一首|个|首|点)?(?:周杰伦|林俊杰|陈奕迅|邓紫棋|薛之谦|李荣浩|毛不易|华晨宇|周深|陶喆|王力宏|张学友|刘德华|王菲|孙燕姿|蔡依林|五月天|BEYOND|朴树|许嵩|汪苏泷|许巍|李健|赵雷|陈粒|房东的猫|周杰伦的歌|林俊杰的歌|陈奕迅的歌|邓紫棋的歌|薛之谦的歌|李荣浩的歌|毛不易的歌|华晨宇的歌|周深的歌|陶喆的歌|王力宏的歌|张学友的歌|刘德华的歌|王菲的歌|孙燕姿的歌|蔡依林的歌|五月天的歌|朴树的歌|许嵩的歌|汪苏泷的歌|许巍的歌|李健的歌|赵雷的歌|陈粒的歌)?(.+?)(?:吧|吗|嘛|呢|呀|~|！|!|的)?$/,
+          // "播放稻香" / "来首江南" / "放一首光年之外"
+          /(?:播放|来首|放首|听首|放一首|来一首|播一首|放个|来个|听个)(?:一[首曲]|个|首)?(.+?)(?:吧|吗|嘛|呢|呀|~|！|!|的)?$/,
+          // "我想听稻香" / "我要听江南" / "帮我找光年之外"
+          /(?:我想听|我要听|帮我找|给我找|帮我放|给我放)(?:一[首曲个]|首|个)?(.+?)(?:吧|吗|嘛|呢|呀|~|！|!|的)?$/,
+          // "周杰伦稻香" / "林俊杰江南"（歌手+歌名直接说）
+          /([\u4e00-\u9fa5]{2,4})([\u4e00-\u9fa5]{1,8})(?:吧|吗|嘛|呢|呀)?$/.test(text) && !/^(今天|明天|后天|现在|请问|我想|知道|查一下|看看|的|什么|怎么|为什么|是不是|能不能|可以)/.test(text)
+            ? null : null, // 占位，下面单独处理
         ];
         for (const pattern of searchPatterns) {
+          if (!pattern) continue;
           const match = text.match(pattern);
           if (match && match[1] && match[1].trim().length > 0) {
             keywords = match[1].trim();
             // 去掉末尾的"歌"字
             keywords = keywords.replace(/的歌?$/, '');
-            break;
+            // 过滤掉太短或无意义的词
+            if (keywords.length >= 1 && !/^(歌|音乐|歌曲|曲|首|好听|节奏|一下|听听|给我|帮我)$/.test(keywords)) {
+              break;
+            }
+            keywords = null;
           }
         }
+
+        // 如果上面没提取到关键词，尝试"歌手+歌名"模式
+        if (!keywords) {
+          // "周杰伦的稻香" / "林俊杰的江南"
+          const artistSongMatch = text.match(/(.+?)(?:的)(.+?)(?:吧|吗|嘛|呢|呀|~|！|!)?$/);
+          if (artistSongMatch && artistSongMatch[1].length >= 2 && artistSongMatch[2].length >= 1) {
+            const artist = artistSongMatch[1].trim();
+            const song = artistSongMatch[2].trim().replace(/歌$/, '');
+            if (!/^(今天|明天|后天|现在|请问|什么|怎么|为什么)$/.test(artist) && song.length >= 1) {
+              keywords = artist + ' ' + song;
+            }
+          }
+        }
+
         this.openMusicPlayer(keywords);
         return true;
       }
@@ -1692,7 +1881,7 @@
       const lowerText = text.toLowerCase();
 
       // ── 下一首 ──
-      if (/下一首|下一曲|切歌|换一首|换个歌|跳过$/.test(text)) {
+      if (/下一首|下一曲|切歌|换一首|换个歌|跳过|下一|skip|next/.test(lowerText)) {
         const nextIndex = this.state.currentSongIndex + 1 >= this.playlist.length ? 0 : this.state.currentSongIndex + 1;
         const nextSong = this.playlist[nextIndex];
         this.playNextSong();
@@ -1704,7 +1893,7 @@
       }
 
       // ── 上一首 ──
-      if (/上一首|上一曲|前一首|返回上一首/.test(text)) {
+      if (/上一首|上一曲|前一首|返回上一首|上一|previous|prev/.test(lowerText)) {
         const prevIndex = this.state.currentSongIndex - 1 < 0 ? this.playlist.length - 1 : this.state.currentSongIndex - 1;
         const prevSong = this.playlist[prevIndex];
         this.playPrevSong();
@@ -1716,7 +1905,7 @@
       }
 
       // ── 暂停 ──
-      if (/暂停播放|暂停$|暂停一下/.test(text)) {
+      if (/暂停播放|暂停一下|暂停|pause|停一下|等一下/.test(lowerText) && !/暂停后/.test(lowerText)) {
         if (this.state.audioPlayer && !this.state.audioPlayer.paused) {
           this.state.audioPlayer.pause();
           this.updateFooter('⏸ 已暂停');
@@ -1725,8 +1914,8 @@
         return true;
       }
 
-      // ── 继续播放 / 播放（单独） ──
-      if (/继续播放|继续$|^播放$|^播放吧$/.test(text)) {
+      // ── 继续播放（仅"继续"类指令，不含歌名） ──
+      if (/^(继续播放|继续|播放吧|开始播放|接着放|接着听|play)$/.test(lowerText.trim())) {
         if (this.state.audioPlayer && this.state.audioPlayer.paused) {
           this.state.audioPlayer.play();
           this.updateFooter('▶ 继续播放');
@@ -1736,7 +1925,7 @@
       }
 
       // ── 退出播放 / 关闭音乐 ──
-      if (/退出播放|关闭音乐|退出音乐|停止播放|不听了|关掉音乐|结束播放|关闭播放/.test(text)) {
+      if (/退出播放|关闭音乐|退出音乐|停止播放|不听了|关掉音乐|结束播放|关闭播放|别放了|不要听了|关了|关音乐|停了|不听了|够了|不要音乐|关掉播放器|退出播放器|close/.test(lowerText)) {
         this.showImmersiveMusic(false);
         this.updateFooter('👋 音乐已关闭');
         ChatModule.addMessage('assistant', '好的，已经退出音乐播放~', 'text');
@@ -1744,13 +1933,13 @@
         return true;
       }
 
-      // ── 播放指定歌曲（播放xxx / 来首xxx / 放一首xxx）──
-      const playSongMatch = text.match(/(?:播放|来首|放首|放一首|放个|来一首|播一首)(?:一[首曲]|个)?(.+?)(?:吧|吗|嘛|呢|呀|~|！|!|的)?$/);
+      // ── 播放指定歌曲（播放xxx / 来首xxx / 放一首xxx / 我要听xxx）──
+      const playSongMatch = text.match(/(?:播放|来首|放首|放一首|放个|来一首|播一首|来个|听个|我想听|我要听|帮我放|给我放|给我来|帮我来|帮我找|给我找)(?:一[首曲个]|个|首)?(.+?)(?:吧|吗|嘛|呢|呀|~|！|!|的)?$/);
       if (playSongMatch && playSongMatch[1] && playSongMatch[1].trim().length >= 1) {
         let keywords = playSongMatch[1].trim();
         keywords = keywords.replace(/的歌?$/g, '');
         // 过滤掉太短的噪音词
-        if (keywords.length >= 1 && !/^(歌|音乐|歌曲|曲|首)$/.test(keywords)) {
+        if (keywords.length >= 1 && !/^(歌|音乐|歌曲|曲|首|好听|节奏|一下|听听|给我|帮我|这个|那个)$/.test(keywords)) {
           console.log('[Music] 语音点歌:', keywords);
           this.updateFooter('🎵 正在搜索: ' + keywords);
           if (window.SpeechModule) SpeechModule.speak('好的，帮你找' + keywords);
@@ -1764,15 +1953,16 @@
 
     /**
      * 打开音乐播放器 - 从网易云获取真实歌曲
+     * @param {string} keywords - 搜索关键词
+     * @param {boolean} usePersonalFM - 是否使用私人漫游模式
      */
-    async openMusicPlayer(keywords) {
-      console.log('[okkoChat] 打开沉浸式音乐可视化');
+    async openMusicPlayer(keywords, usePersonalFM = false) {
+      console.log('[okkoChat] 打开沉浸式音乐可视化', usePersonalFM ? '(私人漫游)' : '');
 
-      // 添加AI消息 - 更自然的语气
-      ChatModule.addMessage('assistant', '好呀，陪你听~ 已经打开啦', 'text');
+      // 添加AI消息
+      ChatModule.addMessage('assistant', usePersonalFM ? '好呀，为你打开私人漫游~' : '好呀，陪你听~ 已经打开啦', 'text');
 
       // 不隐藏聊天界面，保持语音对话可用（边听边聊）
-      // 只隐藏欢迎界面，确保消息列表可见
       if (this.els.welcomeScreen) this.els.welcomeScreen.style.display = 'none';
       if (this.els.chatMessages) this.els.chatMessages.style.display = 'flex';
       if (this.els.chatInputBar) this.els.chatInputBar.style.display = 'flex';
@@ -1780,46 +1970,68 @@
       // 显示沉浸式音乐界面
       this.showImmersiveMusic(true);
 
-      // 播报语音 - 简短自然
+      // 播报语音
       if (window.SpeechModule) {
-        SpeechModule.speak('好呀，陪你听');
+        SpeechModule.speak(usePersonalFM ? '好呀，为你播放私人漫游' : '好呀，陪你听');
       }
 
-      this.updateFooter('🎵 正在搜索歌曲...');
+      this.updateFooter(usePersonalFM ? '🎵 正在获取私人漫游...' : '🎵 正在搜索歌曲...');
       this.updateFloatingAgent('搜歌中', 'active');
 
-      // 从网易云搜索歌曲
+      // 获取歌曲
       try {
-        const searchKeywords = keywords || '热门歌曲';
-        const songs = await this.searchNeteaseSongs(searchKeywords, 10);
+        let songs = [];
+
+        if (usePersonalFM) {
+          // 获取私人漫游歌曲
+          songs = await this.getPersonalFM();
+          if (!songs || songs.length === 0) {
+            ChatModule.addMessage('assistant', '私人漫游需要登录网易云音乐账号哦，先为你播放热门歌曲~', 'text');
+            songs = await this.searchNeteaseSongs('热门歌曲', 10);
+          }
+        } else {
+          const searchKeywords = keywords || '热门歌曲';
+          songs = await this.searchNeteaseSongs(searchKeywords, 10);
+        }
 
         if (songs && songs.length > 0) {
-          // 构建播放列表（兼容官方API和第三方API两种格式）
+          // 构建播放列表
           this.playlist = songs.map(song => ({
             title: song.title || song.name || '未知歌曲',
             artist: song.artist || (song.artists || song.ar)?.map(a => a.name).join(' / ') || '未知歌手',
             neteaseId: song.id,
             cover: song.cover || '',
-            url: null, // 播放时再获取
-            lyrics: null // 播放时再获取
+            url: null,
+            lyrics: null
           }));
 
           this.updateFooter('🎵 找到 ' + songs.length + ' 首歌，开始播放~');
-
-          // 播放第一首
-          setTimeout(() => {
-            this.loadSong(0);
-          }, 500);
+          setTimeout(() => this.loadSong(0), 500);
         } else {
-          // 备用：使用默认歌曲
           this.useFallbackPlaylist();
         }
       } catch (err) {
-        console.error('[Music] 搜索歌曲失败:', err);
+        console.error('[Music] 获取歌曲失败:', err);
         this.useFallbackPlaylist();
       }
 
       return true;
+    },
+
+    // === v6: 获取私人漫游歌曲 ===
+    async getPersonalFM() {
+      try {
+        const res = await fetch('/api/netease-v3/personal-fm');
+        const data = await res.json();
+        if (data.error) {
+          console.error('[NeteaseV3] 私人漫游错误:', data.error);
+          return null;
+        }
+        return data.songs || [];
+      } catch (err) {
+        console.error('[NeteaseV3] 私人漫游获取失败:', err.message);
+        return null;
+      }
     },
 
     /**
@@ -1850,6 +2062,17 @@
       if (!text || this.state.isProcessing) return;
 
       this.els.chatInput.value = '';
+
+      // === v6: 文字输入也支持特殊指令（音乐/实时联网等）===
+      // 音乐播放中：优先检查音乐控制指令
+      if (this.state.immersiveActive && this.checkMusicControls(text)) {
+        return;
+      }
+      // 检查特殊指令（打开音乐/私人漫游/时间查询/天气查询等）
+      if (this.checkSpecialCommands(text)) {
+        return;
+      }
+
       ChatModule.addMessage('user', text, 'text');
       this.handleUserSpeech(text, true);
     },
@@ -2039,46 +2262,9 @@
     },
 
     renderMessage(msg) {
-      // 如果消息已存在，更新内容（流式渲染）
-      var existing = this.els.chatMessages.querySelector('[data-id="' + msg.id + '"]');
-      if (existing) {
-        var existingBubble = existing.querySelector('.message-content');
-        if (existingBubble) existingBubble.textContent = msg.content;
-        this.els.chatMessages.scrollTop = this.els.chatMessages.scrollHeight;
-        return;
-      }
-
-      const div = document.createElement('div');
-      div.className = `message ${msg.role}`;
-      div.dataset.id = msg.id;
-
-      const bubble = document.createElement('div');
-      bubble.className = 'message-content';
-      bubble.textContent = msg.content;
-
-      const time = document.createElement('div');
-      time.className = 'message-time';
-      if (window.Utils) {
-        time.textContent = Utils.formatTime(msg.timestamp);
-      } else {
-        time.textContent = new Date(msg.timestamp).toLocaleTimeString();
-      }
-      if (msg.type === 'voice') {
-        time.textContent += ' • 🎤';
-      }
-
-      div.appendChild(bubble);
-      div.appendChild(time);
-
-      this.els.chatMessages.appendChild(div);
-
-      const welcome = this.els.welcomeScreen;
-      if (welcome && welcome.style.display !== 'none') {
-        welcome.style.display = 'none';
-        this.els.chatMessages.style.display = 'flex';
-      }
-
-      this.els.chatMessages.scrollTop = this.els.chatMessages.scrollHeight;
+      // 不在界面上显示对话文字气泡，仅在控制台记录
+      console.log(`[Chat] ${msg.role}: ${msg.content}`);
+      return;
     },
 
     showLoading(show) {
